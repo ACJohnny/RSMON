@@ -36,11 +36,8 @@ Commander commander;
 // We have to create the prototypes functions for our commands.
 // The arguments have to be the same for all command functions.
 void sendToS1( char *args, Stream *response );
-void sum_func( char *args, Stream *response );
 Commander::API_t API_tree[] = {
     apiElement( "s1", "Send command to Serial1.", sendToS1 ),
-    apiElement( "sum", "Sum two numbers.", sum_func ),
-    
 };
 
 // Create an instance of the server.
@@ -52,8 +49,18 @@ void sendToS1( char *args, Stream *response )
   Serial.println("sendToS1 called with args: ");
   Serial.println(args);
   Serial1.println(args);
-  //commander.execute( args, &Serial1 );
- 
+  
+  // Wait for and forward response from Serial1
+  unsigned long timeout = millis() + 1000; // 1 second timeout
+  while (millis() < timeout) {
+    while (Serial1.available()) {
+      char c = Serial1.read();
+      response->write(c);
+      timeout = millis() + 100; // extend timeout when receiving data
+    }
+    delay(1);
+  }
+  response->println(); // Add final newline
 }
 void setup() {
 
@@ -96,15 +103,11 @@ void setup() {
   //server.begin();
   commander.attachDebugChannel( &Serial );
   //commander.attachDebugChannel( &Serial1 );
-  shell.begin("<>");
-  
   commander.attachTree( API_tree );
-  
-  
   commander.init();
 
   shell.attachCommander( &commander );
-  shell.begin("RS");
+  shell.begin(""); // Empty prompt to let remote device's prompt show through
   // After we attached the API_tree, Commander has to initialize
   // itself for the fastest runtime possible. It creates a balanced
   // binary tree from the API_tree to boost the search speed.
@@ -130,51 +133,23 @@ char commandFromSerial[ 20 ];
 uint8_t commandIndex = 0;
 
 void loop() {
-    // Check if there is any data incoming.
+  // Update shell
+  shell.update();
 
-  shell.update(); 
-   // Give some time to the other tasks.
-   delay( 20 );
-
-}
-
-
-
-/// This is an example function for the sum command
-void sum_func(char *args, Stream *response )
-{
-
-  // These variables will hold the value of the
-  // two numbers, that has to be summed.
-  int a = 0;
-  int b = 0;
-
-  // This variable will hold the result of the
-  // argument parser.
-  int argResult;
-
-  // This variable will hold the sum result.
-  int sum = 0;
-
-  argResult = sscanf( args, "%d %d", &a, &b );
-
-  // We have to check that we parsed succesfully the two
-  // numbers from the argument string.
-  if( argResult != 2 ){
-
-    // If we could not parse two numbers, we have an argument problem.
-    // We print out the problem to the response channel.
-    response -> print( "Argument error! Two numbers required, separated with a blank space.\r\n" );
-
-    // Sadly we have to stop the command execution and return.
-    return;
-
+  // Check for any data from Serial1 and forward it to shell
+  if (shell.isClientConnected() && Serial1.available()) {
+    Stream* response = shell.getActiveStream();
+    while (Serial1.available()) {
+      char c = Serial1.read();
+      if (response) {
+        response->write(c);
+      }
+    }
   }
 
-  // Calculate the sum.
-  sum = a + b;
-
-  // Print out the result.
-  response -> printf( "%d + %d = %d\r\n", a, b, sum );
-
+  // Give some time to other tasks
+  delay(5);
 }
+
+
+
