@@ -137,9 +137,14 @@ void loop() {
   shell.update();
 
   // Check for any data from Serial1 and forward it to shell
-  while (Serial1.available()) {
-    char c = Serial1.read();
-    shell.write(c);
+  if (shell.isClientConnected() && Serial1.available()) {
+    Stream* response = shell.getActiveStream();
+    while (Serial1.available()) {
+      char c = Serial1.read();
+      if (response) {
+        response->write(c);
+      }
+    }
   }
 
   // Give some time to other tasks
